@@ -2,6 +2,7 @@ library(optimx)
 library(tidyverse)
 library(doParallel)
 library(foreach)
+library(vroom)
 
 # Parallel backend
 registerDoParallel(makeCluster(detectCores()))
@@ -10,9 +11,14 @@ calculate = function(n, p, sims = 0) {
   
 # Binary entropy function
 bound = function(p) {
+  if(round(n*p) != 0) {
     res = -p * log2(p) - (1-p)*log2(1-p)
     return(res)
+  } else {
+    res = NaN
+    return(res)
   }
+}
   
   
 # Two-Stage
@@ -24,17 +30,17 @@ dorfman = function(n, p, sims = 0) {
     opts = 1
     num_tests = 1
   } else {
-    opt = function(n, p, s) {
-      res = n * ((1/s) + 1 - (1 - p)^s)
+    opt = function(p, s) {
+      res = ((1/s) + 1 - (1 - p)^s)
     }
     
-    optimization = optimx(par = c(s = 1), fn = function(params) opt(n, p, params["s"]), method = "L-BFGS-B")
+    optimization = optimx(par = c(s = 1), fn = function(params) opt(p, params["s"]), method = "L-BFGS-B")
     
-    if(optimization$s > n | optimization$value > n | optimization$convcode == 1) {
+    if(optimization$s > n | optimization$value > 1 | optimization$convcode == 1) {
       theo = n
       opts = 1
     } else {
-      theo = optimization$value
+      theo = optimization$value * n
       opts = optimization$s
     }
   }
@@ -96,7 +102,7 @@ dorfman = function(n, p, sims = 0) {
                   "Upper" = utests / n,
                   "Rate" = n * bound(p) / theo)
   
-  row.names(df) = "Dorfman"
+  row.names(df) = "SP-Two"
   
   return(df)
 }
@@ -109,17 +115,17 @@ grid = function(n, p, sims = 0) {
     opts = 1
     num_tests = 1
   } else {
-      opt = function(n, p, s) {
-        res =  n * ((2/s) + p + (1 - p) * (1 - (1 - p)^(s - 1))^2)
+      opt = function(p, s) {
+        res =  ((2/s) + p + (1 - p) * (1 - (1 - p)^(s - 1))^2)
       }
       
-      optimization = optimx(par = c(s = 1), fn = function(params) opt(n, p, params["s"]), method = "L-BFGS-B")
+      optimization = optimx(par = c(s = 1), fn = function(params) opt(p, params["s"]), method = "L-BFGS-B")
       
-      if(optimization$s > n | optimization$value > n | optimization$convcode == 1) {
+      if(optimization$s > n | optimization$value > 1 | optimization$convcode == 1) {
         theo = n
         opts = 1
       } else {
-        theo = optimization$value
+        theo = optimization$value * n
         opts = optimization$s
       }
     }
@@ -181,7 +187,7 @@ grid = function(n, p, sims = 0) {
                   "Upper" = utests / n,
                   "Rate" = n * bound(p) / theo)
   
-  row.names(df) = "Double-Pooling"
+  row.names(df) = "DP-Two"
   
   return(df)
 }
@@ -193,20 +199,21 @@ rpooling = function (n, p, sims = 0) {
   if(round(n * p) == 0) {
     theo = 1
     opts = 1
+    num_tests = 1
   } else {
     
-    opt = function(n, p, s, r) {
-      res =  n * ((r/s) + p + (1 - p) * (1 - (1 - p)^(s - 1))^r)
+    opt = function(p, s, r) {
+      res =  ((r/s) + p + (1 - p) * (1 - (1 - p)^(s - 1))^r)
     }
     
-    optimization = optimx(par = c(s = 1, r = 1), fn = function(params) opt(n, p, params["s"], params["r"]), lower = c(1,1), method = "L-BFGS-B")
+    optimization = optimx(par = c(s = 1, r = 1), fn = function(params) opt(p, params["s"], params["r"]), lower = c(1,1), method = "L-BFGS-B")
     
-    if(optimization$s > n | optimization$r < 1 | optimization$value > n | optimization$convcode == 1) {
+    if(optimization$s > 1000 | optimization$r < 1 | optimization$value > 1 | optimization$convcode == 1) {
       theo = n
       opts = 0
       optr = 0
     } else {
-      theo = optimization$value
+      theo = optimization$value * n
       opts = optimization$s
       optr = round(optimization$r)
     }
@@ -305,7 +312,7 @@ rpooling = function (n, p, sims = 0) {
                   "Upper" = utests / n,
                   "Rate" = n * bound(p) / theo)
   
-  row.names(df) = "R-Pooling"
+  row.names(df) = "RP-Two"
   
   return(df)
 }
@@ -319,11 +326,11 @@ three = function(n, p, sims = 0) {
     opts1 = 0
     opts2 = 0
   } else {
-    opt =  function(n, p, s1, s2) {
-      res = n*(1/s1 + 1/s2*(1 - (1-p)^s1) + (1 - (1-p)^s2))
+    opt =  function(p, s1, s2) {
+      res = (1/s1 + 1/s2*(1 - (1-p)^s1) + (1 - (1-p)^s2))
     }
     
-    optimization = optimx(par = c(s1 = 1, s2 = 1), fn = function(params) opt(n, p, params["s1"], params["s2"] ), method = c("L-BFGS-B"), lower = c(1,1))
+    optimization = optimx(par = c(s1 = 1, s2 = 1), fn = function(params) opt(p, params["s1"], params["s2"] ), method = c("L-BFGS-B"), lower = c(1,1))
     
     
     if(optimization$s1 > n | optimization$value > n |  optimization$kkt2 == FALSE | optimization$value == -Inf | optimization$convcode == 1) {
@@ -331,7 +338,7 @@ three = function(n, p, sims = 0) {
       opts1 = 0
       opts2 = 0
     } else {
-      theo = optimization$value
+      theo = optimization$value * n
       opts1 = optimization$s1
       opts2 = optimization$s2
     }
@@ -405,7 +412,7 @@ three = function(n, p, sims = 0) {
                   "Upper" = utests / n,
                   "Rate" = n * bound(p) / theo)
   
-  row.names(df) = "Three"
+  row.names(df) = "SP-Three"
   
   return(df)
 }
@@ -417,11 +424,11 @@ onethree = function(n, p, sims = 0) {
     opts1 = 0
     opts2 = 0
   } else {
-    opt =  function(n, p, s1, s2) {
-      res = n*(2/s1 + 1/s2 * (p + (1-p)* (1 - (1 - p)^(s1 - 1))^2) + (1 - (1-p)^s2)) 
+    opt =  function(p, s1, s2) {
+      res = (2/s1 + 1/s2 * (p + (1-p)* (1 - (1 - p)^(s1 - 1))^2) + (1 - (1-p)^s2)) 
     }
     
-    optimization = optimx(par = c(s1 = 1, s2 = 1), fn = function(params) opt(n, p, params["s1"], params["s2"] ), lower = c(1,1), method = c("L-BFGS-B"))
+    optimization = optimx(par = c(s1 = 1, s2 = 1), fn = function(params) opt(p, params["s1"], params["s2"] ), lower = c(1,1), method = c("L-BFGS-B"))
     
     
     if(optimization$s1 > n | optimization$value > n | optimization$kkt1 == FALSE | optimization$value == -Inf | optimization$convcode == 1) {
@@ -429,7 +436,7 @@ onethree = function(n, p, sims = 0) {
       opts1 = 0
       opts2 = 0
     } else {
-      theo = optimization$value
+      theo = optimization$value*n
       opts1 = optimization$s1
       opts2 = optimization$s2
     }
@@ -527,11 +534,11 @@ four = function(n, p, sims = 0) {
     opts2 = 0
     opts3 = 0
   } else {
-    opt =  function(n, p, s1, s2, s3) {
-      res = n*(1/s1 + 1/s2*(1 - (1-p)^s1) + 1/s3*(1 - (1-p)^s2) + (1-(1-p)^s3))
+    opt =  function(p, s1, s2, s3) {
+      res = (1/s1 + 1/s2*(1 - (1-p)^s1) + 1/s3*(1 - (1-p)^s2) + (1-(1-p)^s3))
     }
     
-    optimization = optimx(par = c(s1 = 1, s2 = 1, s3 = 1), fn = function(params) opt(n, p, params["s1"], params["s2"], params["s3"]), method = c("L-BFGS-B"), lower = c(1,1,1))
+    optimization = optimx(par = c(s1 = 1, s2 = 1, s3 = 1), fn = function(params) opt(p, params["s1"], params["s2"], params["s3"]), method = c("L-BFGS-B"), lower = c(1,1,1))
     
     if(optimization$s1 > 1000 | optimization$value > n |  optimization$kkt2 == FALSE | optimization$value == -Inf | optimization$convcode == 1) {
       theo = n
@@ -539,7 +546,7 @@ four = function(n, p, sims = 0) {
       opts2 = 0
       opts3 = 0
     } else {
-      theo = optimization$value
+      theo = optimization$value * n
       opts1 = optimization$s1
       opts2 = optimization$s2
       opts3 = optimization$s3
@@ -626,7 +633,7 @@ four = function(n, p, sims = 0) {
                   "Upper" = utests / n,
                   "Rate" = n * bound(p) / theo)
   
-  row.names(df) =  "Four"
+  row.names(df) =  "SP-Four"
   
   return(df)
 }
@@ -644,7 +651,7 @@ onefour = function(n, p, sims = 0) {
       return(res)
     }
     
-    optimization = optimx(par = c(s1 = 1, s2 = 1, s3 = 1), fn = function(params) opt(p, params["s1"], params["s2"], params["s3"]), method = c("L-BFGS-B"))
+    optimization = optimx(par = c(s1 = 1, s2 = 1, s3 = 1), fn = function(params) opt(p, params["s1"], params["s2"], params["s3"]), lower = c(1,1,1), method = c("L-BFGS-B"))
     
     if(optimization$s1 > 1000 | optimization$value > 1 |  optimization$kkt2 == FALSE | optimization$value == -Inf | optimization$convcode == 1) {
       theo = n
@@ -768,7 +775,7 @@ return(Tests)
 
 
 n = 1000
-p_val = seq(0,0.072,0.001)
+p_val = seq(0,0.35,0.001)
 
 
 results = lapply(p_val, function(p) calculate(n, p, sims = 100))
@@ -779,22 +786,29 @@ combined_results = do.call(rbind, results)
 # Create a new column for the p values
 combined_results$p = rep(p_val, each = nrow(results[[1]]))
 
-filtered_results = combined_results %>% filter(Algorithm != "R-Pooling")
+#combined_results = vroom("D:/Universität/PhD/Project 2/100.csv")
+filtered_results = combined_results %>% filter(Algorithm != "RP-Two")
 filtered_results = filtered_results %>% filter(Theoretical != 1)
 
-combined_results$Algorithm = factor(combined_results$Algorithm, levels = c("Dorfman", "Double-Pooling", "R-Pooling", "Three", "DP-Three", "Four", "DP-Four"))
-filtered_results$Algorithm = factor(filtered_results$Algorithm, levels = c("Dorfman", "Double-Pooling", "Three", "DP-Three", "Four", "DP-Four"))
+combined_results$Algorithm = factor(combined_results$Algorithm, levels = c("SP-Two", "DP-Two", "RP-Two", "SP-Three", "DP-Three", "SP-Four", "DP-Four"))
+filtered_results$Algorithm = factor(filtered_results$Algorithm, levels = c("SP-Two", "DP-Two", "RP-Two", "SP-Three", "DP-Three", "SP-Four", "DP-Four"))
+
+# filter results for evaluation of performance
+pereval = combined_results %>% filter(Theoretical != 1)
+pereval = pereval %>% filter(p < 0.077)
 
 # Calculate the absolute difference in simulations study
-filtered_results$Diff = abs(filtered_results$Theoretical - filtered_results$Tests)
+filtered_results$Diff = 100*abs((filtered_results$Theoretical  - filtered_results$Tests)/ filtered_results$Theoretical)
 
-result = filtered_results %>% filter(p < 0.35)
+res = filtered_results %>% filter(p < 0.077)
+res = filtered_results %>% filter(p > 0.077 & p < 0.182)
+res = filtered_results %>% filter(p > 0.182)
 
-result = result %>%
+error = res %>%
   group_by(Algorithm) %>%
-  summarise(Total_Diff = sum(Diff, na.rm = TRUE))
+  summarise(MAPE = mean(Diff, na.rm = TRUE))
 
-result
+error
 
 
 x11()
@@ -802,10 +816,11 @@ x11()
 ggplot(filtered_results, aes(x = p)) +
   geom_line(aes(y = Tests, linetype = "Average"), linewidth = 1, alpha = 0.75) +
   geom_line(aes(y = Theoretical, linetype = "Expectation"), linewidth = 1, alpha = 1) +
-  geom_ribbon(aes(ymin = Lower, ymax = Upper), fill = "grey80", alpha = 0.5) +
+  geom_ribbon(aes(ymin = Lower, ymax = Upper, fill = "Range"), alpha = 0.5) +
   facet_wrap(~ Algorithm, scales = "free") +
-  scale_linetype_manual(name = "Lines", values = c("Average" = "solid", "Expectation" = "dashed")) +
-  labs(x = "Probability", y = "Tests per item", title = "Comparison of average and expected number of tests per item for different algorithms") +
+  scale_linetype_manual(name = "Legend", values = c("Average" = "solid", "Expectation" = "dashed")) +
+  scale_fill_manual(name = "Uncertainty", values = c("Range" = "grey80")) +
+  labs(x = "Probability", y = "Tests per member") +
   theme_bw() +
   theme(legend.position = "bottom")
 
@@ -814,71 +829,76 @@ ggplot(filtered_results, aes(x = p)) +
 
 # Plotting the results for the performance evaluation
 
-# algorithm_colors = c("Dorfman" = "blue", 
-#                       "Double-Pooling" = "cyan", 
-#                       "R-Pooling" = "red", 
-#                       "Three" = "green", 
-#                       "DP-Three" = "chartreuse4", 
-#                       "Four" = "darkgoldenrod1", 
-#                       "DP-Four" = "darkgoldenrod")
-# 
-# 
-# ggplot(combined_results, aes(x = p, y = Theoretical, color = Algorithm, linetype = Algorithm)) +
-#   geom_line() +
-#   scale_linetype_manual(values = c("Dorfman" = "solid", 
-#                                    "Double-Pooling" = "solid", 
-#                                    "R-Pooling" = "dashed", 
-#                                    "Three" = "solid", 
-#                                    "DP-Three" = "solid", 
-#                                    "Four" = "solid", 
-#                                    "DP-Four" = "solid")) +
-#   scale_color_manual(values = algorithm_colors) +
-#   labs(x = "Probability", y = "Expected number of tests per item", title = "Expected number of tests per item by algorithm") +
-#   theme_bw() 
-
-ggplot(combined_results, aes(x = p, y = Theoretical,  shape = Algorithm)) +
-  geom_line(linewidth = 0.5) + 
-  geom_point() +
-  scale_shape_manual(values = c("Dorfman" = 21, 
-                                "Double-Pooling" = 16,
-                                "R-Pooling" = 8,
-                                "Three" = 2, 
-                                "DP-Three" = 17, 
-                                "Four" = 22, 
-                                "DP-Four" = 15)) +
-  labs(x = "Probability", y = "Expected number of tests per item", title = "Expected number of tests per item by algorithm") +
+ggplot(pereval, aes(x = p, y = Theoretical, color = Algorithm, linetype = Algorithm)) +
+  geom_line(linewidth = 1.0) +
+  scale_linetype_manual(values = c("SP-Two" = "solid",
+                                   "DP-Two" = "solid",
+                                   "RP-Two" = "dashed",
+                                   "SP-Three" = "solid",
+                                   "DP-Three" = "solid",
+                                   "SP-Four" = "solid",
+                                   "DP-Four" = "solid")) +
+  scale_color_manual(values = c("SP-Two" = "blue",
+                                "DP-Two" = "cyan",
+                                "RP-Two" = "red",
+                                "SP-Three" = "green",
+                                "DP-Three" = "chartreuse4",
+                                "SP-Four" = "darkgoldenrod1",
+                                "DP-Four" = "darkgoldenrod")) +
+  labs(x = "Probability", y = "Expected number of tests per member") +
   theme_bw() +
-  theme(legend.title = element_blank(), legend.position = "right")
+  theme(legend.title = element_blank(), 
+         legend.position = "bottom",
+         legend.key.width = unit(1.5, "cm")) 
 
-
-
-
-
-ggplot(combined_results, aes(x = p, y = Tests, shape = Algorithm)) +
-  geom_line(linewidth = 0.5) + 
-  geom_point() +
-  scale_shape_manual(values = c("Dorfman" = 21, 
-                                "Double-Pooling" = 16,
-                                "R-Pooling" = 8,
-                                "Three" = 2, 
-                                "DP-Three" = 17, 
-                                "Four" = 22, 
-                                "DP-Four" = 15)) +
-  labs(x = "Probability", y = "Average number of tests per item", title = "Average number of tests per item by algorithm") +
-  theme_bw() 
-
-ggplot(combined_results, aes(x = p, y = Rate, shape = Algorithm)) +
-  geom_line(linewidth = 0.5) + 
-  geom_point() +
-  scale_shape_manual(values = c("Dorfman" = 21, 
-                                "Double-Pooling" = 16,
-                                "R-Pooling" = 8,
-                                "Three" = 2, 
-                                "DP-Three" = 17, 
-                                "Four" = 22, 
-                                "DP-Four" = 15)) +
+# ggplot(pereval, aes(x = p, y = Theoretical, color = Algorithm, linetype = Algorithm)) + 
+#   geom_line(linewidth = 1.0) +
+#   scale_color_manual(values = c("SP-Two" = "#808080",   
+#                                 "DP-Two" = "#4D4D4D",   
+#                                 "RP-Two" = "#000000",   
+#                                 "SP-Three" = "#B3B3B3", 
+#                                 "DP-Three" = "#D9D9D9", 
+#                                 "SP-Four" = "#666666",  
+#                                 "DP-Four" = "#999999")) +
+#   scale_linetype_manual(values = c("SP-Two" = "dashed",      
+#                                    "DP-Two" = "twodash",     
+#                                    "RP-Two" = "solid",     
+#                                    "SP-Three" = "12345678",  
+#                                    "DP-Three" = "dotted", 
+#                                    "SP-Four" = "longdash",  
+#                                    "DP-Four" = "dotdash")) +
+#   labs(x = "Probability", y = "Expected number of tests per member", 
+#        title = "Expected number of tests per member by algorithm") +
+#   theme_bw() +
+#   theme(legend.title = element_blank(), 
+#         legend.position = "bottom",
+#         legend.key.width = unit(1.5, "cm")) 
+# 
+# 
+# 
+ggplot(pereval, aes(x = p, y = Rate, color = Algorithm, linetype = Algorithm)) +
+  geom_line(linewidth = 1) +
+  scale_linetype_manual(values = c("SP-Two" = "solid",
+                                   "DP-Two" = "solid",
+                                   "RP-Two" = "dashed",
+                                   "SP-Three" = "solid",
+                                   "DP-Three" = "solid",
+                                   "SP-Four" = "solid",
+                                   "DP-Four" = "solid")) +
+  scale_color_manual(values = c("SP-Two" = "blue",
+                                "DP-Two" = "cyan",
+                                "RP-Two" = "red",
+                                "SP-Three" = "green",
+                                "DP-Three" = "chartreuse4",
+                                "SP-Four" = "darkgoldenrod1",
+                                "DP-Four" = "darkgoldenrod")) +
   labs(x = "Probability", y = "Rate", title = "Rate for different probabilities by algorithm") +
-  theme_bw()
+  theme_bw() +
+  theme(legend.title = element_blank(),
+        legend.position = "bottom",
+        legend.key.width = unit(1.5, "cm"))
+
+
 
 
 
