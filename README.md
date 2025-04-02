@@ -1,6 +1,6 @@
 # Multi-stage Group Testing with (r,s)-regular design Algorithms
 
-This repository simulates multi-stage \((r,s)\)-regular design algorithms within the framework of group testing. It computes:  
+This repository simulates multi-stage (r,s)-regular design algorithms within the framework of group testing. It computes:  
 
 - The expected, average, minimum, maximum number of tests per member  
 - The expected, average, minimum, maximum duration per member  
