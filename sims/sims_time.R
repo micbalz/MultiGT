@@ -825,6 +825,7 @@ ggplot(simulation, aes(x = p)) +
 
 ### Filter results for evaluation of performance
 pereval = results %>%
+  filter(Algorithm != "RP-Two") %>%
   filter(Theoretical != 1)
 
 ### Plot the expected duration per member for the evaluation of performance 
